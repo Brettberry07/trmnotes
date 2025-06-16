@@ -1,0 +1,22 @@
+[package]
+name = "trmnotes"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+
+# terminal ui
+ratatui = "0.29.0"
+crossterm = "0.29.0"
+tui-input = "0.12.1"
+
+# Async runtime
+tokio = "1.45.1"
+
+#markdown parser
+pulldown-cmark = "0.13.0"
+
+# file watching
+notify = "8.0.0"
+color-eyre = "0.6.5"
+
