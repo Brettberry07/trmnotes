@@ -37,6 +37,15 @@ impl App {
 
     fn draw(&self, frame: &mut Frame) {
         frame.render_widget(self, frame.area());
+
+        // render the cursor at the current position
+        let cursor_position = Rect {
+            x: self.cursor_x as u16 + 40,
+            y: self.cursor_y as u16 + 1,
+            width: 1,
+            height: 1,
+        };
+        frame.set_cursor_position((cursor_position.x, cursor_position.y));
     }
 
     fn handle_key_event(&mut self, key_event: KeyEvent) {
@@ -56,20 +65,12 @@ impl App {
                 // move cursor left
                 if self.cursor_x > 0 {
                     self.cursor_x -= 1;
-                } else if self.cursor_y > 0 {
-                    // if cursor_x is 0 and cursor_y is greater than 0, go to previous line
-                    self.cursor_y -= 1;
-                    self.cursor_x = self.text[self.cursor_y].len(); // move cursor to the end of the previous line
                 }
             }
             KeyCode::Right => {
                 // move cursor right
                 if self.cursor_x < self.text[self.cursor_y].len() {
                     self.cursor_x += 1;
-                } else if self.cursor_y < self.text.len() - 1 {
-                    // if cursor_x is at the end of the line and cursor_y is not the last line, go to next line
-                    self.cursor_y += 1;
-                    self.cursor_x = 0; // move cursor to the start of the next line
                 }
             }
             KeyCode::Up => {
@@ -97,6 +98,12 @@ impl App {
                 if self.cursor_x > 0 && self.cursor_y < self.text.len() {
                     self.text[self.cursor_y].remove(self.cursor_x - 1);
                     self.cursor_x -= 1;
+                } else if self.text[self.cursor_y].is_empty() && self.cursor_y > 0 {
+                    // if the current line is empty and cursor_y is greater than 0, remove the current line and go to the previous line
+                    self.text.remove(self.cursor_y);
+                    self.cursor_y -= 1;
+                    self.cursor_x = self.text[self.cursor_y].len(); // move cursor to the end of the previous line
+
                 } else if (self.cursor_x == 0) && (self.cursor_y > 0) {
                     // if cursor_x is 0 and cursor_y is greater than 0, go to precipous line
                     self.cursor_y -= 1;
@@ -181,9 +188,21 @@ impl Widget for &App {
             " Toggle Explorer ".bold().into(),
             "<Ctrl+E> ".yellow().bold().into(),
             " Cursor Pos <".bold().into(),
-            self.cursor_x.to_string().blue().bold().into(),
+
+            if self.cursor_x == self.text[self.cursor_y].len() {
+                self.cursor_x.to_string().red().bold().into()
+            } else {
+                self.cursor_x.to_string().blue().bold().into()
+            },
+
             " : ".bold().into(),
-            self.cursor_y.to_string().blue().bold().into(),
+
+            if self.cursor_y == self.text.len() - 1 {
+                self.cursor_y.to_string().red().bold().into()
+            } else {
+                self.cursor_y.to_string().blue().bold().into()
+            },
+
             ">".bold().into(),
         ]);
 
@@ -207,15 +226,6 @@ impl Widget for &App {
 
         // Render all together now
         main_block.render(area, buf);
-
-        // rendering the cursor position
-        let cursor_position = format!("Cursor: ({}, {})", self.cursor_x + 1, self.cursor_y + 1);
-        buf.set_string(
-            area.x + area.width - cursor_position.len() as u16 - 1,
-            area.y + area.height - 1,
-            cursor_position,
-            ratatui::style::Style::default().fg(ratatui::style::Color::White),
-        );
 
         if self.explorer_open {
             files_block.render(chunks[0], buf);
