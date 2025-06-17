@@ -5,7 +5,7 @@ use ratatui::{
     buffer::Buffer,
     layout::{Rect, Layout, Constraint, Direction},
     style::Stylize,
-    symbols::{block, border},
+    symbols::{border},
     text::{Line, Text},
     widgets::{Block, Paragraph, Widget},
     DefaultTerminal, Frame,
@@ -18,6 +18,11 @@ fn main() -> io::Result<()> {
     app_result
 }
 
+/*
+Explanation of the code:
+This represents the app as a whole.
+It contains all the logic for handling events, and the struct itself hold any variables we need across the whole app.
+*/
 pub struct App {
     text: Vec<String>,
     exit: bool,
@@ -26,6 +31,12 @@ pub struct App {
     cursor_y: usize,
 }
 
+/*
+Explanation of the code:
+This is the implementation of the `App` struct.
+Bascally this is where we can define all our methods and logic for the app.
+This is where we handle the events, draw the UI, and run the app.
+ */
 impl App {
     pub fn run(&mut self, terminal: &mut DefaultTerminal) -> io::Result<()> {
         while !self.exit {
@@ -34,22 +45,42 @@ impl App {
         }
         Ok(())
     }
-
+    /*
+    Draws the Widget we rendered into the terminal. 
+    Also draws the cursor at the current position.
+     */
     fn draw(&self, frame: &mut Frame) {
         frame.render_widget(self, frame.area());
 
         // render the cursor at the current position
         let cursor_position = Rect {
-            x: self.cursor_x as u16 + 40,
-            y: self.cursor_y as u16 + 1,
+            x: if self.explorer_open {
+                self.cursor_x as u16 + 40 // The 40 offset is required because of the left panel width and the border
+            } else {
+                self.cursor_x as u16 + 1 // if it's not open, we don't need the large offset
+            },
+
+            y: self.cursor_y as u16 + 1, // this is because of the border and title bar
             width: 1,
             height: 1,
         };
         frame.set_cursor_position((cursor_position.x, cursor_position.y));
     }
 
+    /*
+    This is where we can handle the key that is pressed.
+    Each are handled through a match statement.
+    We can handle combinations of keys.
+    We have to handle certain keys seperately like arrow ketts, backspace, enter, etc.
+      - Arrow keys allow us to move the cursor around the text.
+      - Backspace allows us to delete the chararcter at the cursor pos
+      - Enter allows us to split the current line at the cursor position.
+    We also handle some special keys like Ctrl+S to save, Ctrl+E to toggle the explorer, and Ctrl+Q to quit.
+    Every other key gets checked if it can be trasnlated to a char, if so we then just insert it to the text at the cursor position.
+     */
     fn handle_key_event(&mut self, key_event: KeyEvent) {
         match key_event.code {
+            // handling special key combinations
             KeyCode::Char('s') if key_event.modifiers.contains(crossterm::event::KeyModifiers::CONTROL) => {
                 println!("saved");
             }
@@ -139,6 +170,10 @@ impl App {
         }
     }
 
+    /*
+    This is where we get all the events. We make sure that we only handle the key presses, 
+    and then pass the key event to the `handle_key_event` method.
+     */
     fn handle_events(&mut self) -> io::Result<()> {
         match event::read()? {
             Event::Key(key_event) if key_event.kind == KeyEventKind::Press => {
@@ -149,6 +184,7 @@ impl App {
         Ok(())
     }
 
+    // Default state of the app
     fn default() -> Self {
         App {
             text: vec!["".to_string()],
@@ -160,6 +196,16 @@ impl App {
     }
 }
 
+/*
+
+Explanation of the code:
+Bascially this is the rendering of the widget.
+Nothing here is what "draws" it on the screen, but rather how it is structured.
+This is the implementation of the `Widget` trait for the `App` struct.
+Since we're implementing the `Widget` trait, we need to define the `render` method.
+Now that we have the widget implemented we ccan turn our app struct into a widget.
+
+*/
 impl Widget for &App {
     fn render(self, area: Rect, buf: &mut Buffer) {
         // The block that holds everything
