@@ -1,4 +1,4 @@
-use std::io;
+use std::{io, vec};
 
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
 use ratatui::{
@@ -19,9 +19,11 @@ fn main() -> io::Result<()> {
 }
 
 pub struct App {
-    text: String,
+    text: Vec<String>,
     exit: bool,
     explorer_open: bool,
+    cursor_x: usize,
+    cursor_y: usize,
 }
 
 impl App {
@@ -48,18 +50,83 @@ impl App {
             KeyCode::Char('q') if key_event.modifiers.contains(crossterm::event::KeyModifiers::CONTROL) => {
                 self.exit = true;
             }
+
+            // handling cursor movement
+            KeyCode::Left => {
+                // move cursor left
+                if self.cursor_x > 0 {
+                    self.cursor_x -= 1;
+                } else if self.cursor_y > 0 {
+                    // if cursor_x is 0 and cursor_y is greater than 0, go to previous line
+                    self.cursor_y -= 1;
+                    self.cursor_x = self.text[self.cursor_y].len(); // move cursor to the end of the previous line
+                }
+            }
+            KeyCode::Right => {
+                // move cursor right
+                if self.cursor_x < self.text[self.cursor_y].len() {
+                    self.cursor_x += 1;
+                } else if self.cursor_y < self.text.len() - 1 {
+                    // if cursor_x is at the end of the line and cursor_y is not the last line, go to next line
+                    self.cursor_y += 1;
+                    self.cursor_x = 0; // move cursor to the start of the next line
+                }
+            }
+            KeyCode::Up => {
+                // move cursor up
+                if self.cursor_y > 0 {
+                    self.cursor_y -= 1;
+                    if self.cursor_x > self.text[self.cursor_y].len() {
+                        self.cursor_x = self.text[self.cursor_y].len(); // move cursor to the end of the previous line
+                    }
+                }
+            }
+            KeyCode::Down => {
+                // move cursor down
+                if self.cursor_y < self.text.len() - 1 {
+                    self.cursor_y += 1;
+                    if self.cursor_x > self.text[self.cursor_y].len() {
+                        self.cursor_x = self.text[self.cursor_y].len(); // move cursor to the end of the next line
+                    }
+                }
+            }
+
+            // handling text editing    
             KeyCode::Backspace => {
                 // remove the last character from the text
-                self.text.pop();
+                if self.cursor_x > 0 && self.cursor_y < self.text.len() {
+                    self.text[self.cursor_y].remove(self.cursor_x - 1);
+                    self.cursor_x -= 1;
+                } else if (self.cursor_x == 0) && (self.cursor_y > 0) {
+                    // if cursor_x is 0 and cursor_y is greater than 0, go to precipous line
+                    self.cursor_y -= 1;
+                    self.cursor_x = self.text[self.cursor_y].len(); // move cursor to the end of the previous line
+                }
             }
             KeyCode::Enter => {
-                // append a newline character to the text
-                self.text.push('\n');
+                // split the current line at the cursor position
+                let mut current_line = self.text[self.cursor_y].clone();
+                let new_line = current_line.split_off(self.cursor_x);
+                self.text[self.cursor_y] = current_line; // update the current line
+                self.text.insert(self.cursor_y + 1, new_line); // insert the new line after the current line
+                // move the cursor to the start of the new line
+                self.cursor_y += 1;
+                self.cursor_x = 0;
             }
             _ => {
                 // if the key is a character, append it to the text
                 if let Some(c) = key_event.code.as_char() {
-                    self.text.push(c);
+                    self.text[self.cursor_y].insert(self.cursor_x, c);
+                    self.cursor_x += 1;
+
+                    // Ensure the cursor does not go out of bounds
+                    if self.cursor_x > self.text[self.cursor_y].len() {
+                        self.cursor_x = self.text[self.cursor_y].len();
+                    }
+                    // Ensure the cursor_y does not go out of bounds
+                    if self.cursor_y >= self.text.len() {
+                        self.text.push("".to_string());
+                    }
                 }
             }
         }
@@ -77,9 +144,11 @@ impl App {
 
     fn default() -> Self {
         App {
-            text: "".to_string(),
+            text: vec!["".to_string()],
             exit: false,
             explorer_open: true,
+            cursor_x: 0,
+            cursor_y: 0,
         }
     }
 }
@@ -106,15 +175,20 @@ impl Widget for &App {
         // Block on the right, this displays the content of the file and the editor
         let instructions = Line::from(vec![
             " Quit ".bold().into(),
-            "<Ctrl+q> ".red().bold().into(),
+            "<Ctrl+Q> ".red().bold().into(),
             " Save ".bold().into(),
-            "<Ctrl+s> ".green().bold().into(),
+            "<Ctrl+S> ".green().bold().into(),
             " Toggle Explorer ".bold().into(),
-            "<Ctrl+e> ".yellow().bold().into(),
+            "<Ctrl+E> ".yellow().bold().into(),
+            " Cursor Pos <".bold().into(),
+            self.cursor_x.to_string().blue().bold().into(),
+            " : ".bold().into(),
+            self.cursor_y.to_string().blue().bold().into(),
+            ">".bold().into(),
         ]);
 
         // this is the text that will be displayed in the editor
-        let editor_text = Text::from(self.text.clone());
+        let editor_text = Text::from(self.text.iter().map(|line| Line::from(line.as_str())).collect::<Vec<Line>>());
         let editor_paragraph = Paragraph::new(editor_text)
             .block(Block::default().borders(ratatui::widgets::Borders::ALL))
             .wrap(ratatui::widgets::Wrap { trim: true });
@@ -134,9 +208,19 @@ impl Widget for &App {
         // Render all together now
         main_block.render(area, buf);
 
+        // rendering the cursor position
+        let cursor_position = format!("Cursor: ({}, {})", self.cursor_x + 1, self.cursor_y + 1);
+        buf.set_string(
+            area.x + area.width - cursor_position.len() as u16 - 1,
+            area.y + area.height - 1,
+            cursor_position,
+            ratatui::style::Style::default().fg(ratatui::style::Color::White),
+        );
+
         if self.explorer_open {
             files_block.render(chunks[0], buf);
             editor_block.render(chunks[1], buf);
+
         } else {
             // If explorer is closed, use the full area for the editor
             editor_block.render(area, buf);
