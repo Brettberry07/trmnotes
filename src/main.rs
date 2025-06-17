@@ -217,7 +217,7 @@ impl Widget for &App {
         // Split the area into left and right panels
         let chunks = Layout::default()
             .direction(Direction::Horizontal)
-            .constraints([Constraint::Percentage(15), Constraint::Percentage(85)])
+            .constraints([Constraint::Percentage(13), Constraint::Percentage(2), Constraint::Percentage(85)])
             .split(area);
 
         // Block on the left, this displays the files
@@ -261,7 +261,7 @@ impl Widget for &App {
         let editor_area = Layout::default()
             .direction(Direction::Vertical)
             .constraints([Constraint::Min(1)])
-            .split(if self.explorer_open { chunks[1] } else { area });
+            .split(if self.explorer_open { chunks[2] } else { area });
         // Render the editor paragraph in the bottom part of the right panel
         editor_paragraph.render(editor_area[0], buf);
 
@@ -270,12 +270,26 @@ impl Widget for &App {
             .title_bottom(instructions.centered())
             .border_set(border::PLAIN);
 
-        // Render all together now
-        main_block.render(area, buf);
+        // Rendering the line numbers
+        let line_numbers: Vec<Line> = (0..self.text.len())
+            .map(|mut i| {
+                i += 1;
+                if i-1 == self.cursor_y {
+                    Line::from(i.to_string().red().bold())
+                } else {
+                    Line::from(i.to_string().blue().bold())
+                }
+            })
+            .collect();
+        let line_numbers_text = Text::from(line_numbers);
+        let line_numbers_paragraph = Paragraph::new(line_numbers_text)
+            .block(Block::default().borders(ratatui::widgets::Borders::ALL))
+            .wrap(ratatui::widgets::Wrap { trim: true });
+        line_numbers_paragraph.render(chunks[1], buf);
 
         if self.explorer_open {
             files_block.render(chunks[0], buf);
-            editor_block.render(chunks[1], buf);
+            editor_block.render(chunks[2], buf);
 
         } else {
             // If explorer is closed, use the full area for the editor
