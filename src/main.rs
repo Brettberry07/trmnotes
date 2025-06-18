@@ -38,6 +38,9 @@ pub struct App {
     explorer_open: bool,                  // wehther or not we show the menu that displays the files
     help_menu_open: bool,                 // wehther or not we display some keybinds
 
+    note_create_mode: bool,               // if true, we are in the mode to create a new note
+    new_file_name: String,                // name of the new file that is being created, if empty, we use the default.txt
+
 
     // vars related to cursor position
     cursor_x: usize,
@@ -52,11 +55,14 @@ impl default::Default for App {
             text: vec!["".to_string()],
             folder: String::from("./notes/"),
             files: vec![],
-            current_file: "test.md".to_string().into(),
+            current_file: "default.txt".to_string().into(),
 
             exit: false,
             explorer_open: true,
             help_menu_open: false,
+
+            note_create_mode: false,
+            new_file_name: String::new(),
 
             cursor_x: 0,
             cursor_y: 0,
@@ -117,6 +123,35 @@ impl App {
     Every other key gets checked if it can be trasnlated to a char, if so we then just insert it to the text at the cursor position.
      */
     fn handle_key_event(&mut self, key_event: KeyEvent) {
+        if self.note_create_mode {
+            // If we are in note creation mode, we handle the key events differently
+            if key_event.code == KeyCode::Enter {
+                // If Enter is pressed, we create a new note with the current file name
+                if !self.new_file_name.is_empty() {
+                    let file_name = self.new_file_name.clone();
+                    if let Err(e) = self.create_note(&file_name) {
+                        eprintln!("Failed to create note: {}", e);
+                    } else {
+                        self.current_file = Some(file_name);
+                        self.note_create_mode = false; // Exit note creation mode
+                    }
+                }
+            } else if key_event.code == KeyCode::Backspace {
+                // If Backspace is pressed, remove the last character from the new file name
+                if !self.new_file_name.is_empty() {
+                    self.new_file_name.pop();
+                }
+            } else if key_event.code == KeyCode::Esc {
+                // If Escape is pressed, exit note creation mode
+                self.note_create_mode = false;
+                self.new_file_name.clear(); // Clear the new file name
+            } else if let Some(c) = key_event.code.as_char() {
+                // If any other character is pressed, append it to the new file name
+                self.new_file_name.push(c);
+            }
+            return; // Exit early if in note creation mode
+        }
+
         match key_event.code {
             // handling special key combinations
             KeyCode::Char('s') if key_event.modifiers.contains(crossterm::event::KeyModifiers::CONTROL) => {
@@ -134,6 +169,8 @@ impl App {
             }
             KeyCode::Char('n') if key_event.modifiers.contains(crossterm::event::KeyModifiers::CONTROL) => {
                 // create a new note
+                // Inside this loop we are going to display a prompt for the user to enter the name of the new note.
+                self.note_create_mode = true;
                 let file_name = "new_note.txt"; // You can change this to a user input
                 if let Err(e) = self.create_note(file_name) {
                     eprintln!("Failed to create note: {}", e);
@@ -143,7 +180,7 @@ impl App {
             }
             KeyCode::Char('o') if key_event.modifiers.contains(crossterm::event::KeyModifiers::CONTROL) => {
                 // open an existing note
-                let file_name = "default.txt"; // You can change this to a user input
+                let file_name = "new_note.txt"; // You can change this to a user input
                 if let Err(e) = self.open_note(file_name) {
                     eprintln!("Failed to open note: {}", e);
                 } else {
@@ -455,6 +492,41 @@ impl Widget for &App {
                 .block(Block::default().borders(ratatui::widgets::Borders::ALL).title(" Help ".bold().blue()))
                 .wrap(ratatui::widgets::Wrap { trim: true });
             help_paragraph.render(help_area, buf);
+        }
+
+        // rednering the create note block if in note creation mode
+        if self.note_create_mode {
+            // preparing create note area
+            let create_note_width = 35;
+            let create_note_height = 8;
+            let x = (area.width.saturating_sub(create_note_width)) / 2 + area.x;
+            let y = (area.height.saturating_sub(create_note_height)) / 2 + area.y;
+            let create_note_area = Rect::new(x, y, create_note_width, create_note_height);
+
+            // Manually clear the create note area by filling it with spaces
+            for y in create_note_area.top()..create_note_area.bottom() {
+                for x in create_note_area.left()..create_note_area.right() {
+                    if let Some(cell) = buf.cell_mut((x, y)) {
+                        cell.set_symbol(" ");
+                    }
+                }
+            }
+
+            let create_note_text = Text::from(vec![
+                Line::from("Create Note:"),
+                Line::from(format!("Name: {}", self.new_file_name)),
+                Line::from(""),
+                Line::from(vec![
+                    "Create: ".into(),
+                    "Enter".bold().green().into(),
+                    ", Cancel: ".into(),
+                    "Esc".bold().red().into(),
+                ]),
+            ]);
+            let create_note_paragraph = Paragraph::new(create_note_text)
+                .block(Block::default().borders(ratatui::widgets::Borders::ALL).title(" Create Note ".bold().blue()))
+                .wrap(ratatui::widgets::Wrap { trim: true });
+            create_note_paragraph.render(create_note_area, buf);
         }
 
         
