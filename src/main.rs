@@ -38,6 +38,12 @@ pub struct App {
     explorer_open: bool,                  // wehther or not we show the menu that displays the files
     help_menu_open: bool,                 // wehther or not we display some keybinds
 
+    note_create_mode: bool,               // if true, we are in the mode to create a new note
+    new_file_name: String,                // name of the new file that is being created, if empty, we use the default.txt
+
+    file_select_mode: bool,
+    file_select_index: usize,             // index of the file that is selected in the file explorer
+
 
     // vars related to cursor position
     cursor_x: usize,
@@ -52,11 +58,17 @@ impl default::Default for App {
             text: vec!["".to_string()],
             folder: String::from("./notes/"),
             files: vec![],
-            current_file: "test.md".to_string().into(),
+            current_file: "default.txt".to_string().into(),
 
             exit: false,
             explorer_open: true,
             help_menu_open: false,
+
+            note_create_mode: false,
+            new_file_name: String::new(),
+
+            file_select_mode: false,
+            file_select_index: 0,
 
             cursor_x: 0,
             cursor_y: 0,
@@ -117,6 +129,65 @@ impl App {
     Every other key gets checked if it can be trasnlated to a char, if so we then just insert it to the text at the cursor position.
      */
     fn handle_key_event(&mut self, key_event: KeyEvent) {
+        if self.note_create_mode {
+            // If we are in note creation mode, we handle the key events differently
+            if key_event.code == KeyCode::Enter {
+                // If Enter is pressed, we create a new note with the current file name
+                if !self.new_file_name.is_empty() {
+                    let file_name = self.new_file_name.clone();
+                    if let Err(e) = self.create_note(&file_name) {
+                        eprintln!("Failed to create note: {}", e);
+                    } else {
+                        self.current_file = Some(file_name);
+                        self.note_create_mode = false; // Exit note creation mode
+                        self.new_file_name.clear();    // Clear the new file name
+                    }
+                }
+            } else if key_event.code == KeyCode::Backspace {
+                // If Backspace is pressed, remove the last character from the new file name
+                if !self.new_file_name.is_empty() {
+                    self.new_file_name.pop();
+                }
+            } else if key_event.code == KeyCode::Esc {
+                // If Escape is pressed, exit note creation mode
+                self.note_create_mode = false;
+                self.new_file_name.clear(); // Clear the new file name
+            } else if let Some(c) = key_event.code.as_char() {
+                // If any other character is pressed, append it to the new file name
+                self.new_file_name.push(c);
+            }
+            return; // Exit early if in note creation mode
+        } else if self.file_select_mode {
+            // If we are in file selection mode, we handle the key events differently
+            if key_event.code == KeyCode::Enter {
+                // If Enter is pressed, open the selected file
+                if self.file_select_index < self.files.len() {
+                    let file_name = &self.files[self.file_select_index].clone();
+                    if let Err(e) = self.open_note(file_name) {
+                        eprintln!("Failed to open note: {}", e);
+                    } else {
+                        self.current_file = Some(file_name.clone());
+                        self.file_select_mode = false; // Exit file selection mode
+                        self.file_select_index = 0; // Reset the file selection index
+                    }
+                }
+            } else if key_event.code == KeyCode::Esc {
+                // If Escape is pressed, exit file selection mode
+                self.file_select_mode = false;
+            } else if key_event.code == KeyCode::Up || key_event.code == KeyCode::Char('w') {
+                // Move up in the file list
+                if self.file_select_index > 0 {
+                    self.file_select_index -= 1;
+                }
+            } else if key_event.code == KeyCode::Down || key_event.code == KeyCode::Char('s') {
+                // Move down in the file list
+                if self.file_select_index < self.files.len() - 1 {
+                    self.file_select_index += 1;
+                }
+            }
+            return; // Exit early if in file selection mode
+        }
+
         match key_event.code {
             // handling special key combinations
             KeyCode::Char('s') if key_event.modifiers.contains(crossterm::event::KeyModifiers::CONTROL) => {
@@ -134,21 +205,12 @@ impl App {
             }
             KeyCode::Char('n') if key_event.modifiers.contains(crossterm::event::KeyModifiers::CONTROL) => {
                 // create a new note
-                let file_name = "new_note.txt"; // You can change this to a user input
-                if let Err(e) = self.create_note(file_name) {
-                    eprintln!("Failed to create note: {}", e);
-                } else {
-                    self.current_file = Some(file_name.to_string());
-                }
+                // Inside this loop we are going to display a prompt for the user to enter the name of the new note.
+                self.note_create_mode = true;
             }
             KeyCode::Char('o') if key_event.modifiers.contains(crossterm::event::KeyModifiers::CONTROL) => {
-                // open an existing note
-                let file_name = "default.txt"; // You can change this to a user input
-                if let Err(e) = self.open_note(file_name) {
-                    eprintln!("Failed to open note: {}", e);
-                } else {
-                    self.current_file = Some(file_name.to_string());
-                }
+                self.file_select_mode = true;
+                self.get_notes().expect("Failed to get notes");
             }
             KeyCode::Char('h') if key_event.modifiers.contains(crossterm::event::KeyModifiers::CONTROL) => {
                 // toggle help menu
@@ -262,6 +324,7 @@ impl App {
                 }
             }
         }
+        self.files.sort(); // Sort files alphabetically
         Ok(())
     }
 
@@ -285,6 +348,9 @@ impl App {
             let mut content = String::new();
             file.read_to_string(&mut content)?;
             self.text = content.lines().map(|line| line.to_string()).collect();
+            if self.text.is_empty() {
+                self.text.push("".to_string()); // Ensure there's at least one line
+            }
             self.cursor_x = 0;
             self.cursor_y = 0;
         } else {
@@ -457,7 +523,84 @@ impl Widget for &App {
             help_paragraph.render(help_area, buf);
         }
 
-        
+        // rednering the create note block if in note creation mode
+        if self.note_create_mode {
+            // preparing create note area
+            let create_note_width = 35;
+            let create_note_height = 8;
+            let x = (area.width.saturating_sub(create_note_width)) / 2 + area.x;
+            let y = (area.height.saturating_sub(create_note_height)) / 2 + area.y;
+            let create_note_area = Rect::new(x, y, create_note_width, create_note_height);
 
+            // Manually clear the create note area by filling it with spaces
+            for y in create_note_area.top()..create_note_area.bottom() {
+                for x in create_note_area.left()..create_note_area.right() {
+                    if let Some(cell) = buf.cell_mut((x, y)) {
+                        cell.set_symbol(" ");
+                    }
+                }
+            }
+
+            let create_note_text = Text::from(vec![
+                Line::from("Create Note:"),
+                Line::from(format!("Name: {}", self.new_file_name)),
+                Line::from(""),
+                Line::from(vec![
+                    "Create: ".into(),
+                    "Enter".bold().green().into(),
+                    " | Cancel: ".into(),
+                    "Esc".bold().red().into(),
+                ]),
+            ]);
+            let create_note_paragraph = Paragraph::new(create_note_text)
+                .block(Block::default().borders(ratatui::widgets::Borders::ALL).title(" Create Note ".bold().blue()))
+                .wrap(ratatui::widgets::Wrap { trim: true });
+            create_note_paragraph.render(create_note_area, buf);
+        }
+
+        // rendering the file selection mode if it's open
+        if self.file_select_mode {
+            // preparing file selection area
+            let file_select_width = 40;
+            let file_select_height = 4 + self.files.len() as u16; // 4 for the instructions + number of files
+            let x = (area.width.saturating_sub(file_select_width)) / 2 + area.x;
+            let y = (area.height.saturating_sub(file_select_height)) / 2 + area.y;
+            let file_select_area = Rect::new(x, y, file_select_width, file_select_height);
+
+            // Manually clear the file selection area by filling it with spaces
+            for y in file_select_area.top()..file_select_area.bottom() {
+                for x in file_select_area.left()..file_select_area.right() {
+                    if let Some(cell) = buf.cell_mut((x, y)) {
+                        cell.set_symbol(" ");
+                    }
+                }
+            }
+
+            // Prepare the text for the file selection menu
+            let mut file_lines: Vec<Line> = self.files.iter().enumerate().map(|(i, file)| {
+                if i == self.file_select_index {
+                    Line::from(file.as_str().bold().yellow()) // Highlight the selected file
+                } else if file.as_str() == self.current_file.as_deref().unwrap_or("default.txt") {
+                    Line::from(file.as_str().bold().green()) // Highlight the current file
+                } else {
+                    Line::from(file.as_str())
+                }
+            }).collect();
+
+            // Add instructions at the bottom
+            file_lines.push(Line::from(""));
+            file_lines.push(Line::from(vec![
+                "Select: ".into(),
+                "Enter".bold().green().into(),
+                " | Cancel: ".into(),
+                "Esc".bold().red().into(),
+            ]));
+
+            let file_select_text = Text::from(file_lines);
+            let file_select_paragraph = Paragraph::new(file_select_text)
+                .block(Block::default().borders(ratatui::widgets::Borders::ALL).title(" Select File ".bold().blue()))
+                .wrap(ratatui::widgets::Wrap { trim: true });
+            file_select_paragraph.render(file_select_area, buf);
+        }
     }
 }

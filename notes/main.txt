@@ -1,0 +1,28 @@
+    fn handle_key_event(&mut self, key_event: KeyEvent) {
+        if self.note_create_mode {
+            // If we are in note creation mode, we handle the key events differently
+            if key_event.code == KeyCode::Enter {
+                // If Enter is pressed, we create a new note with the current file name
+                if !self.new_file_name.is_empty() {
+                    let file_name = self.new_file_name.clone();
+                    if let Err(e) = self.create_note(&file_name) {
+                        eprintln!("Failed to create note: {}", e);
+                    } else {
+                        self.current_file = Some(file_name);
+                        self.note_create_mode = false; // Exit note creation mode
+                        self.new_file_name.clear();    // Clear the new file name
+                    }
+                }
+            } else if key_event.code == KeyCode::Backspace {
+                // If Backspace is pressed, remove the last character from the new file name
+                if !self.new_file_name.is_empty() {
+                    self.new_file_name.pop();
+                }
+            } else if key_event.code == KeyCode::Esc {
+                // If Escape is pressed, exit note creation mode
+                self.note_create_mode = false;
+                self.new_file_name.clear(); // Clear the new file name
+            } else if let Some(c) = key_event.code.as_char() {
+                // If any other character is pressed, append it to the new file name
+                self.new_file_name.push(c);
+            }
