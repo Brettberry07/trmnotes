@@ -1,7 +1,27 @@
 WELCOME TO TRMNOTES!
 
 Very simple, you have all the instrunctions you need on the botttom.
+There is more neat commands in the help menu so make sure you check that out (ctrl+h).
+
 This is a simple notetaking app that strictly stays in the terminal.
 My inspirtation was nvim but I'm bad at vim controls so I made this.
 
-Enjoy using this app!
+Basic overview:
+On the left is the file explorer, shows all the different notes you have.
+You can open other files by doing ctrl+O, if you want to make a new file just do ctrl+N.
+To delete a file is ctrl+d.
+You can toggle the file explorer by pressing ctrl+E.
+
+The editor section is the area you type in. You can make multiple lines and get around using the arrow keys. (mouse soon to come)
+Only ascii characters work so keep that in mind (maybe markdown support in the future? still debating).
+
+On the right you have line number, it highlights which line you are currently on in a different color (color depends on system and themeing).
+
+On the bottom you have some basic important controls. Also tells you ur cursor pos.
+The numbers are highlited based off whether or not u are at the end of the possible index of that line (so at the very end of the line the x pos should be red or color depends)
+
+If you evey need help just make sure to check the help menu with ctrl+H.
+
+Enjoy using my app!
+
+
