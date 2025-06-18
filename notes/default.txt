@@ -1,0 +1,7 @@
+WELCOME TO TRMNOTES!
+
+Very simple, you have all the instrunctions you need on the botttom.
+This is a simple notetaking app that strictly stays in the terminal.
+My inspirtation was nvim but I'm bad at vim controls so I made this.
+
+Enjoy using this app!

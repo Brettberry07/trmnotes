@@ -1,4 +1,4 @@
-use std::{path, vec};
+use std::{default, path, vec};
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read, Write};
 use std::path::Path;
@@ -27,13 +27,42 @@ This represents the app as a whole.
 It contains all the logic for handling events, and the struct itself hold any variables we need across the whole app.
 */
 pub struct App {
-    text: Vec<String>,
-    exit: bool,
-    explorer_open: bool,
+    // vars related to text editing
+    text: Vec<String>,                    // text that is displayed, one line is one string
+    folder: String,                       // folder where notes are stored
+    files: Vec<String>,                   // all the files in that folder
+    current_file: Option<String>,         //current file that is being edited, if None, we use the default.txt
+
+    // vars related to app state and menus
+    exit: bool,                           // if true, stop running the app
+    explorer_open: bool,                  // wehther or not we show the menu that displays the files
+    help_menu_open: bool,                 // wehther or not we display some keybinds
+
+
+    // vars related to cursor position
     cursor_x: usize,
     cursor_y: usize,
-    folder: String,
-    files: Vec<String>,
+
+}
+
+impl default::Default for App {
+    // Default state of the app
+    fn default() -> Self {
+        App {
+            text: vec!["".to_string()],
+            folder: String::from("./notes/"),
+            files: vec![],
+            current_file: "test.md".to_string().into(),
+
+            exit: false,
+            explorer_open: true,
+            help_menu_open: false,
+
+            cursor_x: 0,
+            cursor_y: 0,
+
+        }
+    }
 }
 
 /*
@@ -44,6 +73,8 @@ This is where we handle the events, draw the UI, and run the app.
  */
 impl App {
     pub fn run(&mut self, terminal: &mut DefaultTerminal) -> io::Result<()> {
+        self.open_note( &self.current_file.clone().unwrap_or_else(|| "default.txt".to_string()))?;
+
         while !self.exit {
             self.get_notes()?;
             terminal.draw(|frame| self.draw(frame))?;
@@ -89,13 +120,39 @@ impl App {
         match key_event.code {
             // handling special key combinations
             KeyCode::Char('s') if key_event.modifiers.contains(crossterm::event::KeyModifiers::CONTROL) => {
-                println!("saved");
+                if let Some(file_name) = self.current_file.clone() {
+                    if let Err(e) = self.save_note(&file_name) {
+                        eprintln!("Failed to save note: {}", e);
+                    }
+                }
             }
             KeyCode::Char('e') if key_event.modifiers.contains(crossterm::event::KeyModifiers::CONTROL) => {
                 self.explorer_open = !self.explorer_open;
             }
             KeyCode::Char('q') if key_event.modifiers.contains(crossterm::event::KeyModifiers::CONTROL) => {
                 self.exit = true;
+            }
+            KeyCode::Char('n') if key_event.modifiers.contains(crossterm::event::KeyModifiers::CONTROL) => {
+                // create a new note
+                let file_name = "new_note.txt"; // You can change this to a user input
+                if let Err(e) = self.create_note(file_name) {
+                    eprintln!("Failed to create note: {}", e);
+                } else {
+                    self.current_file = Some(file_name.to_string());
+                }
+            }
+            KeyCode::Char('o') if key_event.modifiers.contains(crossterm::event::KeyModifiers::CONTROL) => {
+                // open an existing note
+                let file_name = "default.txt"; // You can change this to a user input
+                if let Err(e) = self.open_note(file_name) {
+                    eprintln!("Failed to open note: {}", e);
+                } else {
+                    self.current_file = Some(file_name.to_string());
+                }
+            }
+            KeyCode::Char('h') if key_event.modifiers.contains(crossterm::event::KeyModifiers::CONTROL) => {
+                // toggle help menu
+                self.help_menu_open = !self.help_menu_open;
             }
 
             // handling cursor movement
@@ -208,17 +265,45 @@ impl App {
         Ok(())
     }
 
-    // Default state of the app
-    fn default() -> Self {
-        App {
-            text: vec!["".to_string()],
-            exit: false,
-            explorer_open: true,
-            cursor_x: 0,
-            cursor_y: 0,
-            folder: String::from("./notes"),
-            files: vec![],
+    fn create_note(&mut self, file_name: &str) -> io::Result<()> {
+        let file_path = Path::new(&self.folder).join(file_name);
+        if !file_path.exists() {
+            let mut file = OpenOptions::new()
+                .create(true)
+                .write(true)
+                .open(file_path)?;
+            file.write_all(b"")?; // Create an empty file
+            self.get_notes()?; // Refresh the list of files
         }
+        Ok(())
+    }
+
+    fn open_note(&mut self, file_name: &str) -> io::Result<()> {
+        let file_path = Path::new(&self.folder).join(file_name);
+        if file_path.exists() {
+            let mut file = File::open(file_path)?;
+            let mut content = String::new();
+            file.read_to_string(&mut content)?;
+            self.text = content.lines().map(|line| line.to_string()).collect();
+            self.cursor_x = 0;
+            self.cursor_y = 0;
+        } else {
+            eprintln!("File not found: {}", file_name);
+        }
+        Ok(())
+    }
+
+    fn save_note(&mut self, file_name: &str) -> io::Result<()> {
+        let file_path = Path::new(&self.folder).join(file_name);
+        let mut file = OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .open(file_path)?;
+        for line in &self.text {
+            writeln!(file, "{}", line)?;
+        }
+        Ok(())
     }
 }
 
@@ -240,28 +325,15 @@ impl Widget for &App {
             .direction(Direction::Horizontal)
             .constraints([Constraint::Percentage(13), Constraint::Percentage(85), Constraint::Percentage(2),])
             .split(area);
-
-        // Block on the left, this displays the files
-        let files_paragraph = Paragraph::new(
-            Text::from(self.files.iter().map(|file| Line::from(file.as_str())).collect::<Vec<Line>>())
-        )
-            .block(Block::default().borders(ratatui::widgets::Borders::ALL))
-            .wrap(ratatui::widgets::Wrap { trim: true });
-        let files_block = Block::bordered()
-            .title(" Files ".bold().blue())
-            .border_set(border::PLAIN);
-        let files_area = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([Constraint::Min(1)])
-            .split(chunks[0]);
-        files_paragraph.render(files_area[0], buf);
         
         // Block on the right, this displays the content of the file and the editor
         let instructions = Line::from(vec![
+            " Help ".bold().into(),
+            "<Ctrl+H> ".yellow().bold().into(),
             " Quit ".bold().into(),
             "<Ctrl+Q> ".red().bold().into(),
-            " Save ".bold().into(),
-            "<Ctrl+S> ".green().bold().into(),
+            // " Save ".bold().into(),
+            // "<Ctrl+S> ".green().bold().into(),
             " Toggle Explorer ".bold().into(),
             "<Ctrl+E> ".yellow().bold().into(),
             " Cursor Pos <".bold().into(),
@@ -328,6 +400,22 @@ impl Widget for &App {
         line_numbers_paragraph.render(chunks[2], buf);
 
         if self.explorer_open {
+            // Block on the left, this displays the files
+            let files_paragraph = Paragraph::new(
+                Text::from(self.files.iter().map(|file| Line::from(file.as_str())).collect::<Vec<Line>>())
+            )
+                .block(Block::default().borders(ratatui::widgets::Borders::ALL))
+                .wrap(ratatui::widgets::Wrap { trim: true });
+            let files_block = Block::bordered()
+                .title(" Files ".bold().blue())
+                .border_set(border::PLAIN);
+            let files_area = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([Constraint::Min(1)])
+                .split(chunks[0]);
+
+            files_paragraph.render(files_area[0], buf);
+
             files_block.render(chunks[0], buf);
             editor_block.render(chunks[1], buf);
 
@@ -335,5 +423,41 @@ impl Widget for &App {
             // If explorer is closed, use the full area for the editor
             editor_block.render(area, buf);
         }
+
+        // Rendering the help menu if it's open
+        if self.help_menu_open {
+            // preparing help area
+            // 1) determine size of the help box
+            let help_width = 30;
+            let help_height = 10;
+            let x = (area.width.saturating_sub(help_width)) / 2 + area.x;
+            let y = (area.height.saturating_sub(help_height)) / 2 + area.y;
+            let help_area = Rect::new(x, y, help_width, help_height);
+
+            // Manually clear the help area by filling it with spaces
+            for y in help_area.top()..help_area.bottom() {
+                for x in help_area.left()..help_area.right() {
+                    if let Some(cell) = buf.cell_mut((x, y)) {
+                        cell.set_symbol(" ");
+                    }
+                }
+            }
+
+            let help_text = Text::from(vec![
+                Line::from("Ctrl+Q: Quit"),
+                Line::from("Ctrl+S: Save"),
+                Line::from("Ctrl+E: Toggle Explorer"),
+                Line::from("Ctrl+N: Create New Note"),
+                Line::from("Ctrl+O: Open Note"),
+                Line::from("Ctrl+H: Toggle Help Menu"),
+            ]);
+            let help_paragraph = Paragraph::new(help_text)
+                .block(Block::default().borders(ratatui::widgets::Borders::ALL).title(" Help ".bold().blue()))
+                .wrap(ratatui::widgets::Wrap { trim: true });
+            help_paragraph.render(help_area, buf);
+        }
+
+        
+
     }
 }
