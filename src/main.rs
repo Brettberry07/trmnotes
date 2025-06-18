@@ -1,4 +1,7 @@
-use std::{io, vec};
+use std::{path, vec};
+use std::fs::{self, File, OpenOptions};
+use std::io::{self, Read, Write};
+use std::path::Path;
 
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
 use ratatui::{
@@ -29,6 +32,8 @@ pub struct App {
     explorer_open: bool,
     cursor_x: usize,
     cursor_y: usize,
+    folder: String,
+    files: Vec<String>,
 }
 
 /*
@@ -40,6 +45,7 @@ This is where we handle the events, draw the UI, and run the app.
 impl App {
     pub fn run(&mut self, terminal: &mut DefaultTerminal) -> io::Result<()> {
         while !self.exit {
+            self.get_notes()?;
             terminal.draw(|frame| self.draw(frame))?;
             self.handle_events()?;
         }
@@ -52,10 +58,11 @@ impl App {
     fn draw(&self, frame: &mut Frame) {
         frame.render_widget(self, frame.area());
 
+
         // render the cursor at the current position
         let cursor_position = Rect {
             x: if self.explorer_open {
-                self.cursor_x as u16 + 40 // The 40 offset is required because of the left panel width and the border
+                self.cursor_x as u16 + 35 // The 40 offset is required because of the left panel width and the border
             } else {
                 self.cursor_x as u16 + 1 // if it's not open, we don't need the large offset
             },
@@ -184,6 +191,23 @@ impl App {
         Ok(())
     }
 
+    // Getting all the files in folder and dealing with that stuff
+    fn get_notes(&mut self) -> io::Result<()> {
+        self.files.clear();
+        for entry in fs::read_dir(&self.folder)? {
+            let entry = entry?;
+            let path = entry.path();
+            if path.is_file() {
+                if let Some(file_name) = path.file_name() {
+                    if let Some(file_name_str) = file_name.to_str() {
+                        self.files.push(file_name_str.to_string());
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
     // Default state of the app
     fn default() -> Self {
         App {
@@ -192,6 +216,8 @@ impl App {
             explorer_open: true,
             cursor_x: 0,
             cursor_y: 0,
+            folder: String::from("./notes"),
+            files: vec![],
         }
     }
 }
@@ -208,23 +234,28 @@ Now that we have the widget implemented we ccan turn our app struct into a widge
 */
 impl Widget for &App {
     fn render(self, area: Rect, buf: &mut Buffer) {
-        // The block that holds everything
-        let title = Line::from(" Trmnotes ".bold().blue());
-        let main_block = Block::bordered()
-            .title(title.centered())
-            .border_set(border::THICK);
 
         // Split the area into left and right panels
         let chunks = Layout::default()
             .direction(Direction::Horizontal)
-            .constraints([Constraint::Percentage(13), Constraint::Percentage(2), Constraint::Percentage(85)])
+            .constraints([Constraint::Percentage(13), Constraint::Percentage(85), Constraint::Percentage(2),])
             .split(area);
 
         // Block on the left, this displays the files
+        let files_paragraph = Paragraph::new(
+            Text::from(self.files.iter().map(|file| Line::from(file.as_str())).collect::<Vec<Line>>())
+        )
+            .block(Block::default().borders(ratatui::widgets::Borders::ALL))
+            .wrap(ratatui::widgets::Wrap { trim: true });
         let files_block = Block::bordered()
             .title(" Files ".bold().blue())
             .border_set(border::PLAIN);
-
+        let files_area = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Min(1)])
+            .split(chunks[0]);
+        files_paragraph.render(files_area[0], buf);
+        
         // Block on the right, this displays the content of the file and the editor
         let instructions = Line::from(vec![
             " Quit ".bold().into(),
@@ -261,7 +292,7 @@ impl Widget for &App {
         let editor_area = Layout::default()
             .direction(Direction::Vertical)
             .constraints([Constraint::Min(1)])
-            .split(if self.explorer_open { chunks[2] } else { area });
+            .split(if self.explorer_open { chunks[1] } else { area });
         // Render the editor paragraph in the bottom part of the right panel
         editor_paragraph.render(editor_area[0], buf);
 
@@ -270,26 +301,35 @@ impl Widget for &App {
             .title_bottom(instructions.centered())
             .border_set(border::PLAIN);
 
-        // Rendering the line numbers
+        // Rendering the line numbers on the left side
+        // We create a vector of lines, each line is a number from 1 to the number of lines in the text
         let line_numbers: Vec<Line> = (0..self.text.len())
-            .map(|mut i| {
-                i += 1;
-                if i-1 == self.cursor_y {
+            .map(| i| {
+                if i == self.cursor_y {
                     Line::from(i.to_string().red().bold())
                 } else {
                     Line::from(i.to_string().blue().bold())
                 }
             })
+          //.map(|mut i| {
+            //     if i == self.cursor_y {
+            //         i = 0;
+            //         Line::from(i.to_string().red().bold())    // This is for if I want the line number to be how far away fron the cursor it is
+            //     } else {
+            //         if i > self.cursor_y { i -= self.cursor_y; } else { i = self.cursor_y - i;}
+            //         Line::from(i.to_string().blue().bold())
+            //     }
+            // })
             .collect();
         let line_numbers_text = Text::from(line_numbers);
         let line_numbers_paragraph = Paragraph::new(line_numbers_text)
             .block(Block::default().borders(ratatui::widgets::Borders::ALL))
             .wrap(ratatui::widgets::Wrap { trim: true });
-        line_numbers_paragraph.render(chunks[1], buf);
+        line_numbers_paragraph.render(chunks[2], buf);
 
         if self.explorer_open {
             files_block.render(chunks[0], buf);
-            editor_block.render(chunks[2], buf);
+            editor_block.render(chunks[1], buf);
 
         } else {
             // If explorer is closed, use the full area for the editor
