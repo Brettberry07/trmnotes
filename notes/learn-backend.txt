@@ -1,0 +1,20 @@
+What cameron says I need to do:
+ - No head
+- Pass JWT tokens for authentication (token based authentication)
+- Store the users somewhere (SQLite DB)
+- Use expressJS
+- Use CURL (sends data to an endpoint)
+- pass username and password as parameters, the api registers that, api checks this, sedn token back to user
+- once user recieves token the token is used as an authenticator so its secure, make sure to encrypt and decrypt user information
+- End points needed: (register, login, logout, pulldata (like an email))
+- JWT token needed to access the logout and pulldata end points, compare the token to a list of valid tokens, that's how u find out who the user is
+- Have timers on each login and timeout if they are logged in to long
+
+- Explanation for timers: 
+- Make a 2D array, for each array u have the JWT token,and the timer.
+- JS will be able to countdown that timer and once that timer reaches 0 the JWt token is said to be invalid
+- Built in library
+
+
+Maybe maybe maybe,
+add oauth for fun
